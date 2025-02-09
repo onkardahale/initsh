@@ -1,7 +1,16 @@
 #!/bin/bash
 
-# Set strict error handling
-set -euo pipefail
+# Set error handling
+set -E  # Enable error trapping
+set -o functrace  # Enable function trace for trap
+
+# Enable debug mode if needed
+# Uncomment the next line to see detailed execution
+#set -x
+
+# Disable certain strict flags that might cause unwanted exits
+set +e  # Don't exit on error
+set +u  # Don't exit on undefined variable
 
 # Colors for output
 RED='\033[0;31m'
@@ -22,22 +31,55 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Function to log debug information
+debug_log() {
+    echo -e "${YELLOW}[DEBUG]${NC} $1" >&2
+}
+
+# cleanup function with debug info
+cleanup() {
+    debug_log "Cleanup triggered from: ${BASH_COMMAND}"
+    debug_log "Current function: ${FUNCNAME[*]}"
+    log_info "Restoring original sleep settings..."
+    if [[ -n "${ORIGINAL_DISPLAY_SLEEP:-}" && -n "${ORIGINAL_DISK_SLEEP:-}" && -n "${ORIGINAL_SYSTEM_SLEEP:-}" ]]; then
+        sudo pmset displaysleep "$ORIGINAL_DISPLAY_SLEEP" disksleep "$ORIGINAL_DISK_SLEEP" sleep "$ORIGINAL_SYSTEM_SLEEP"
+    fi
+}
+
+# error handler
+error_handler() {
+    local line_no=$1
+    local command=$2
+    local error_code=$3
+    debug_log "Error in command '$command' on line $line_no (Exit code: $error_code)"
+}
+
 # Store original sleep settings
 ORIGINAL_SLEEP_SETTINGS=$(pmset -g)
-ORIGINAL_DISPLAY_SLEEP=$(echo "$ORIGINAL_SLEEP_SETTINGS" | grep "displaysleep" | awk '{print $2}')
-ORIGINAL_DISK_SLEEP=$(echo "$ORIGINAL_SLEEP_SETTINGS" | grep "disksleep" | awk '{print $2}')
-ORIGINAL_SYSTEM_SLEEP=$(echo "$ORIGINAL_SLEEP_SETTINGS" | grep "sleep" | awk '{print $2}')
+if [[ $? -eq 0 ]]; then
+    ORIGINAL_DISPLAY_SLEEP=$(echo "$ORIGINAL_SLEEP_SETTINGS" | grep "displaysleep" | awk '{print $2}')
+    ORIGINAL_DISK_SLEEP=$(echo "$ORIGINAL_SLEEP_SETTINGS" | grep "disksleep" | awk '{print $2}')
+    ORIGINAL_SYSTEM_SLEEP=$(echo "$ORIGINAL_SLEEP_SETTINGS" | grep " sleep " | awk '{print $2}')
 
-# Prevent sleep during script execution
-log_info "Temporarily preventing system sleep..."
-sudo pmset -a displaysleep 0 disksleep 0 sleep 0
+    # Prevent sleep during script execution
+    log_info "Temporarily preventing system sleep..."
+    if [[ -n "$ORIGINAL_DISPLAY_SLEEP" && -n "$ORIGINAL_DISK_SLEEP" && -n "$ORIGINAL_SYSTEM_SLEEP" ]]; then
+        sudo pmset displaysleep 0 disksleep 0 sleep 0
+    else
+        log_warn "Could not determine original sleep settings, skipping sleep prevention"
+    fi
 
-# Trap to restore original sleep settings on script exit
-cleanup() {
-    log_info "Restoring original sleep settings..."
-    sudo pmset -a displaysleep "$ORIGINAL_DISPLAY_SLEEP" disksleep "$ORIGINAL_DISK_SLEEP" sleep "$ORIGINAL_SYSTEM_SLEEP"
-}
-trap cleanup EXIT
+    # Trap to restore original sleep settings on script exit
+    cleanup() {
+        log_info "Restoring original sleep settings..."
+        if [[ -n "$ORIGINAL_DISPLAY_SLEEP" && -n "$ORIGINAL_DISK_SLEEP" && -n "$ORIGINAL_SYSTEM_SLEEP" ]]; then
+            sudo pmset displaysleep "$ORIGINAL_DISPLAY_SLEEP" disksleep "$ORIGINAL_DISK_SLEEP" sleep "$ORIGINAL_SYSTEM_SLEEP"
+        fi
+    }
+    trap cleanup EXIT
+else
+    log_warn "Could not get current power settings, skipping sleep prevention"
+fi
 
 # Check if running with sudo
 if [ "$EUID" -eq 0 ]; then
@@ -135,25 +177,63 @@ done
 
 # Install GUI applications via Homebrew Cask
 for cask in "${CASK_PACKAGES[@]}"; do
-    if ! brew list --cask "$cask" &> /dev/null; then
-        brew install --cask "$cask"
+    # Map cask names to actual application names/paths
+    case "$cask" in
+        "google-chrome")
+            app_path="/Applications/Google Chrome.app"
+            ;;
+        "visual-studio-code")
+            app_path="/Applications/Visual Studio Code.app"
+            ;;
+        "iterm2")
+            app_path="/Applications/iTerm.app"
+            ;;
+        "android-studio")
+            app_path="/Applications/Android Studio.app"
+            ;;
+        "spotify")
+            app_path="/Applications/Spotify.app"
+            ;;
+        *)
+            app_path="/Applications/${cask}.app"
+            ;;
+    esac
+
+    if [ -d "$app_path" ]; then
+        log_warn "$cask already installed at $app_path"
     else
-        log_warn "$cask already installed"
+        log_info "Installing $cask..."
+        brew install --cask "$cask"
     fi
 done
 
 # Set up Git configuration
 log_info "Setting up Git configuration..."
+debug_log "Starting Git configuration"
 if [ ! -f ~/.gitconfig ]; then
+    debug_log "No existing gitconfig found"
     read -p "Enter your Git name: " git_name
     read -p "Enter your Git email: " git_email
     git config --global user.name "$git_name"
     git config --global user.email "$git_email"
     git config --global init.defaultBranch main
     git config --global core.editor "code --wait"
+    debug_log "Git config created with name: $git_name"
+else
+    debug_log "Existing gitconfig found"
+    # Get email from existing git config
+    git_email=$(git config --global user.email)
+    if [ -z "$git_email" ]; then
+        debug_log "No email in existing config"
+        read -p "Enter your Git email: " git_email
+        git config --global user.email "$git_email"
+    fi
+    debug_log "Using git email: $git_email"
 fi
 
 # Generate and configure GitHub SSH key
+log_info "Setting up GitHub SSH key..."
+debug_log "Starting SSH key setup"
 log_info "Setting up GitHub SSH key..."
 if [ ! -f ~/.ssh/id_rsa ]; then
     # Create .ssh directory if it doesn't exist
@@ -272,13 +352,20 @@ brew install nmap tcpdump wireshark
 # Set zsh as default shell
 log_info "Setting zsh as the default shell..."
 if [[ $SHELL != "/bin/zsh" ]]; then
-    chsh -s /bin/zsh
+    # Check if zsh is in /etc/shells, add it if not
+    if ! grep -q "$(which zsh)" /etc/shells; then
+        log_info "Adding zsh to /etc/shells..."
+        echo "$(which zsh)" | sudo tee -a /etc/shells
+    fi
+    # Change shell without requiring terminal restart
+    SHELL="$(which zsh)"
+    export SHELL
 fi
 
-# Install Oh My Zsh
+# Install Oh My Zsh - use the unattended installation
 if [ ! -d ~/.oh-my-zsh ]; then
     log_info "Installing Oh My Zsh..."
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+    RUNZSH=no sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
 fi
 
 # Set up macOS preferences
