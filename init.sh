@@ -39,19 +39,41 @@ else
     log_warn "Xcode Command Line Tools already installed"
 fi
 
-# Install Rosetta 2 for M1 Macs
-if [[ $(uname -m) == 'arm64' ]]; then
-    log_info "Installing Rosetta 2..."
-    softwareupdate --install-rosetta --agree-to-license
-fi
-
 # Install Homebrew
 log_info "Installing Homebrew..."
 if ! command -v brew &> /dev/null; then
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    # Get latest Homebrew version
+    BREW_VERSION=$(curl -s https://api.github.com/repos/Homebrew/brew/releases/latest | grep -o '"tag_name": ".*"' | cut -d'"' -f4)
+    
+    if [ -z "$BREW_VERSION" ]; then
+        log_error "Failed to get Homebrew version"
+        exit 1
+    fi
+    
+    # Construct download URL
+    BREW_URL="https://github.com/Homebrew/brew/releases/download/${BREW_VERSION}/Homebrew-${BREW_VERSION}.pkg"
+    
+    log_info "Downloading Homebrew ${BREW_VERSION}..."
+    if ! curl -L -o /tmp/homebrew.pkg "$BREW_URL"; then
+        log_error "Failed to download Homebrew"
+        exit 1
+    fi
+    
+    log_info "Installing Homebrew..."
+    if ! sudo installer -pkg /tmp/homebrew.pkg -target /; then
+        log_error "Failed to install Homebrew"
+        rm /tmp/homebrew.pkg
+        exit 1
+    fi
+    rm /tmp/homebrew.pkg
+
+    # Initialize Homebrew environment
     if [[ $(uname -m) == 'arm64' ]]; then
         echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
         eval "$(/opt/homebrew/bin/brew shellenv)"
+    else
+        echo 'eval "$(/usr/local/bin/brew shellenv)"' >> ~/.zprofile
+        eval "$(/usr/local/bin/brew shellenv)"
     fi
 else
     log_warn "Homebrew already installed"
@@ -151,7 +173,7 @@ fi
 
 # Install databases
 log_info "Installing databases..."
-brew install postgresql mongodb-community@6.0
+brew install postgresql mongodb-community
 
 # Configure PostgreSQL
 log_info "Setting up PostgreSQL..."
@@ -161,7 +183,7 @@ createdb postgres 2>/dev/null || log_warn "Database 'postgres' already exists"
 
 # Configure MongoDB
 log_info "Setting up MongoDB..."
-brew services start mongodb-community@6.0
+brew services start mongodb-community
 
 # Install networking tools
 log_info "Installing networking tools..."
