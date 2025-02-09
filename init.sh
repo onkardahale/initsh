@@ -222,6 +222,8 @@ defaults write com.apple.finder ShowPathbar -bool true
 defaults write com.apple.finder ShowStatusBar -bool true
 # Save screenshots to ~/Documents/Screenshots
 defaults write com.apple.screencapture location ~/Documents/Screenshots
+# Show battery percentage in menu bar
+defaults write com.apple.menuextra.battery ShowPercent -bool true
 
 # Restart affected applications
 for app in Finder Dock SystemUIServer; do
