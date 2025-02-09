@@ -200,18 +200,32 @@ if [ ! -f ~/.zshrc ]; then
     touch ~/.zshrc
 fi
 
-if ! grep -q "miniforge3/bin" ~/.zshrc; then
-    echo 'export PATH="$HOME/miniforge3/bin:$PATH"' >> ~/.zshrc
+# Initialize Conda for the current shell and future sessions
+if [[ $(uname -m) == 'arm64' ]]; then
+    CONDA_PATH="/opt/homebrew/bin/conda"
+else
+    CONDA_PATH="/usr/local/bin/conda"
 fi
 
-source ~/.zshrc
-conda init zsh
+# Initialize conda in the current shell
+eval "$($CONDA_PATH shell.zsh hook)"
+
+# Initialize conda for future sessions if not already done
+if ! grep -q "conda initialize" ~/.zshrc; then
+    $CONDA_PATH init zsh
+fi
+
+# Make sure conda command is available in current session
+if ! command -v conda &> /dev/null; then
+    log_error "Conda installation failed or not properly initialized"
+    exit 1
+fi
 
 # Create Python environment for API development
 if ! conda env list | grep -q "^api "; then
     conda create -n api python=3.11 -y
     conda activate api
-    pip install fastapi uvicorn pydantic[dotenv] requests httpx pytest black isort mypy ruff
+    pip install fastapi uvicorn pydantic[dotenv] requests httpx pytest black isort mypy
 else
     log_warn "Python 'api' environment already exists"
 fi
