@@ -3,6 +3,23 @@
 # Set strict error handling
 set -euo pipefail
 
+# Store original sleep settings
+ORIGINAL_SLEEP_SETTINGS=$(pmset -g)
+ORIGINAL_DISPLAY_SLEEP=$(echo "$ORIGINAL_SLEEP_SETTINGS" | grep "displaysleep" | awk '{print $2}')
+ORIGINAL_DISK_SLEEP=$(echo "$ORIGINAL_SLEEP_SETTINGS" | grep "disksleep" | awk '{print $2}')
+ORIGINAL_SYSTEM_SLEEP=$(echo "$ORIGINAL_SLEEP_SETTINGS" | grep "sleep" | awk '{print $2}')
+
+# Prevent sleep during script execution
+log_info "Temporarily preventing system sleep..."
+sudo pmset -a displaysleep 0 disksleep 0 sleep 0
+
+# Trap to restore original sleep settings on script exit
+cleanup() {
+    log_info "Restoring original sleep settings..."
+    sudo pmset -a displaysleep "$ORIGINAL_DISPLAY_SLEEP" disksleep "$ORIGINAL_DISK_SLEEP" sleep "$ORIGINAL_SYSTEM_SLEEP"
+}
+trap cleanup EXIT
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
