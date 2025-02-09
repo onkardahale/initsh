@@ -77,11 +77,29 @@ BREW_PACKAGES=(
     tree
 )
 
+# Install GUI applications
+log_info "Installing GUI applications..."
+CASK_PACKAGES=(
+    iterm2
+    google-chrome
+    android-studio
+    spotify
+)
+
 for package in "${BREW_PACKAGES[@]}"; do
     if ! brew list "$package" &> /dev/null; then
         brew install "$package"
     else
         log_warn "$package already installed"
+    fi
+done
+
+# Install GUI applications via Homebrew Cask
+for cask in "${CASK_PACKAGES[@]}"; do
+    if ! brew list --cask "$cask" &> /dev/null; then
+        brew install --cask "$cask"
+    else
+        log_warn "$cask already installed"
     fi
 done
 
