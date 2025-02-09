@@ -211,7 +211,7 @@ conda init zsh
 if ! conda env list | grep -q "^api "; then
     conda create -n api python=3.11 -y
     conda activate api
-    pip install fastapi uvicorn pydantic[dotenv] requests httpx pytest black isort mypy
+    pip install fastapi uvicorn pydantic[dotenv] requests httpx pytest black isort mypy ruff
 else
     log_warn "Python 'api' environment already exists"
 fi
