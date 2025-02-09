@@ -125,6 +125,55 @@ for cask in "${CASK_PACKAGES[@]}"; do
     fi
 done
 
+# Set up Git configuration
+log_info "Setting up Git configuration..."
+if [ ! -f ~/.gitconfig ]; then
+    read -p "Enter your Git name: " git_name
+    read -p "Enter your Git email: " git_email
+    git config --global user.name "$git_name"
+    git config --global user.email "$git_email"
+    git config --global init.defaultBranch main
+    git config --global core.editor "code --wait"
+fi
+
+# Generate and configure GitHub SSH key
+log_info "Setting up GitHub SSH key..."
+if [ ! -f ~/.ssh/id_rsa ]; then
+    # Create .ssh directory if it doesn't exist
+    mkdir -p ~/.ssh
+    chmod 700 ~/.ssh
+    
+    # Generate SSH key
+    ssh-keygen -t rsa -b 4096 -C "$git_email" -f ~/.ssh/id_rsa -N ""
+    
+    # Start ssh-agent and add the key
+    eval "$(ssh-agent -s)"
+    ssh-add ~/.ssh/id_rsa
+    
+    # Copy public key to clipboard
+    pbcopy < ~/.ssh/id_rsa.pub
+    
+    log_info "SSH key has been generated and copied to clipboard"
+    log_info "Please add this key to your GitHub account:"
+    log_info "1. Go to https://github.com/settings/ssh/new"
+    log_info "2. Give your key a title (e.g., 'MacBook Pro')"
+    log_info "3. Paste the key from your clipboard"
+    log_info "4. Click 'Add SSH key'"
+    
+    # Wait for user to confirm
+    read -p "Press Enter after adding the key to GitHub..."
+    
+    # Test SSH connection
+    log_info "Testing GitHub SSH connection..."
+    if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+        log_info "GitHub SSH connection successful!"
+    else
+        log_warn "GitHub SSH connection test failed. Please verify your key was added correctly."
+    fi
+else
+    log_warn "SSH key already exists at ~/.ssh/id_rsa"
+fi
+
 # Install Python & Conda
 log_info "Installing Python & Conda..."
 brew install python miniforge
@@ -188,17 +237,6 @@ brew services start mongodb-community
 # Install networking tools
 log_info "Installing networking tools..."
 brew install nmap tcpdump wireshark
-
-# Set up Git configuration
-log_info "Setting up Git configuration..."
-if [ ! -f ~/.gitconfig ]; then
-    read -p "Enter your Git name: " git_name
-    read -p "Enter your Git email: " git_email
-    git config --global user.name "$git_name"
-    git config --global user.email "$git_email"
-    git config --global init.defaultBranch main
-    git config --global core.editor "code --wait"
-fi
 
 # Set zsh as default shell
 log_info "Setting zsh as the default shell..."
