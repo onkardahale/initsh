@@ -207,6 +207,21 @@ for cask in "${CASK_PACKAGES[@]}"; do
     fi
 done
 
+# Install JDK 
+log_info "Installing JDK..."
+if ! brew list --cask temurin &> /dev/null; then
+    brew install --cask temurin
+    
+    # Set JAVA_HOME environment variable
+    echo 'export JAVA_HOME=$(/usr/libexec/java_home)' >> ~/.zshrc
+    # Immediate effect for current session
+    export JAVA_HOME=$(/usr/libexec/java_home)
+    
+    log_info "JDK installed and JAVA_HOME configured"
+else
+    log_warn "JDK already installed"
+fi
+
 # Set up Git configuration
 log_info "Setting up Git configuration..."
 debug_log "Starting Git configuration"
